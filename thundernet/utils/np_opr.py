@@ -709,9 +709,11 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
             # Convert (x, y , w, h) to (x1, y1, x2, y2)
             # x1, y1 is top left coordinate
             # x2, y2 is bottom right coordinate
-            A[2, :, :, curr_layer] += A[0, :, :, curr_layer]
-            A[3, :, :, curr_layer] += A[1, :, :, curr_layer]
-
+            try:
+                A[2, :, :, curr_layer] += A[0, :, :, curr_layer]
+                A[3, :, :, curr_layer] += A[1, :, :, curr_layer] 
+            except RuntimeWarning:
+                print(A[2, :, :, curr_layer], A[0, :, :, curr_layer], A[3, :, :, curr_layer], A[1, :, :, curr_layer])    
             # Avoid bboxes drawn outside the feature map
             A[0, :, :, curr_layer] = np.maximum(0, A[0, :, :, curr_layer])
             A[1, :, :, curr_layer] = np.maximum(0, A[1, :, :, curr_layer])

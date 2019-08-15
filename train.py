@@ -22,19 +22,22 @@ from thundernet.layers.detector import rpn_layer, classifier_layer
 from thundernet.utils.losses import rpn_loss_cls, rpn_loss_regr,class_loss_cls, class_loss_regr
 
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+
 # ----------------------------- Path_config ------------------------------ #
-base_path = 'E:/1wyh/TF-Keras-ThunderNet/'
-train_path = 'E:/1wyh/TF-Keras-ThunderNet/data/train_list.txt'
-output_weight_path = os.path.join(base_path, 'model/model_thunder_snet.h5')
+base_path = '/data2/intern/TF-Keras-ThunderNet/'
+train_path = '/data2/intern/TF-Keras-ThunderNet/data/train.txt'
+output_weight_path = os.path.join(base_path, './model/model_thunder_snet.h5')
 record_path = os.path.join(base_path, 'model/record.csv')
 base_weight_path = os.path.join(base_path, 'model/vgg16_weights_tf_dim_ordering_tf_kernels.h5')
-config_output_filename = os.path.join(base_path, 'model/model_snet_config.pickle')
+config_output_filename = os.path.join(base_path, './model/model_snet_config.pickle')
 
 # ------------------------------- Config ----------------------------------- #
-num_rois = 4  # Number of RoIs to process at once.
-horizontal_flips = True
-vertical_flips = True
-rot_90 = True
+num_rois = 9  # Number of RoIs to process at once.
+horizontal_flips = False #True
+vertical_flips = False #True
+rot_90 = False #True
 
 # Create the config
 C = Config()
@@ -66,7 +69,6 @@ if 'bg' not in classes_count:
 #    classes_count: {'Car': 2383, 'Mobile phone': 1108, 'Person': 3745, 'bg': 0}
 #    class_mapping: {'Person': 0, 'Car': 1, 'Mobile phone': 2, 'bg': 3}
 C.class_mapping = class_mapping
-
 print('Training images per class:')
 pprint.pprint(classes_count)
 print('Num classes (including bg) = {}'.format(len(classes_count)))
@@ -121,8 +123,7 @@ if not os.path.isfile(C.model_path):
         model_rpn.load_weights(C.base_net_weights, by_name=True)
         model_classifier.load_weights(C.base_net_weights, by_name=True)
     except:
-        print('Could not load pretrained model weights. Weights can be found in the keras application folder \
-            https://github.com/fchollet/keras/tree/master/keras/applications')
+        print('Could not load pretrained model weights. Weights can be found in the keras application folde')
 
     # Create the record.csv file to record losses, acc and mAP
     record_df = pd.DataFrame(
@@ -153,8 +154,8 @@ else:
 # -------------------------------------------------------- #
 #                     Compile Model                        #
 # -------------------------------------------------------- #
-optimizer = Adam(lr=1e-3)
-optimizer_classifier = Adam(lr=1e-3)
+optimizer = Adam(lr=1e-5)
+optimizer_classifier = Adam(lr=1e-5)
 model_rpn.compile(optimizer=optimizer, loss=[rpn_loss_cls(num_anchors), rpn_loss_regr(num_anchors)])
 model_classifier.compile(optimizer=optimizer_classifier, loss=[class_loss_cls, class_loss_regr(len(classes_count)-1)], metrics={'dense_class_{}'.format(len(classes_count)): 'accuracy'})
 model_all.compile(optimizer='sgd', loss='mae')
@@ -166,8 +167,8 @@ model_all.compile(optimizer='sgd', loss='mae')
 total_epochs = len(record_df)
 r_epochs = len(record_df)
 
-epoch_length = 100
-num_epochs = 20
+epoch_length = 485
+num_epochs = 100
 iter_num = 0
 
 total_epochs += num_epochs

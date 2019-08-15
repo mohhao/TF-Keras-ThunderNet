@@ -41,9 +41,12 @@ def get_data(input_path):
             sys.stdout.write('\r' + 'idx=' + str(i))
             i += 1
 
-            line_split = line.strip().split(',')
+            #line_split = line.strip().split(',')
 
-            (filename, y1, x1, y2, x2, class_name) = line_split
+            #(filename, y1, x1, y2, x2, class_name) = line_split
+            print(line)
+            filename = line.split()[0]
+            y1, x1, y2, x2, class_name = line.split()[1].split(',')
 
             if class_name not in classes_count:
                 classes_count[class_name] = 1

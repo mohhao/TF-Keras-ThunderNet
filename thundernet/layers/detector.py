@@ -9,6 +9,110 @@ from tensorflow.keras.layers import TimeDistributed
 from tensorflow.keras.layers import Layer, Lambda, multiply
 
 from thundernet.utils.common import depthwise_conv5x5, conv1x1, batchnorm
+import numpy as np
+
+class PSRoiAlignPooling(Layer):
+    """ROI pooling layer for 2D inputs.
+    See Spatial Pyramid Pooling in Deep Convolutional Networks for Visual Recognition,
+    K. He, X. Zhang, S. Ren, J. Sun
+    # Arguments
+        pool_size: int
+            Size of pooling region to use. pool_size = 7 will result in a 7x7 region.
+        num_rois: number of regions of interest to be used
+    # Input shape
+        list of two 4D tensors [X_img,X_roi] with shape:
+        X_img:
+        `(1, rows, cols, channels)`
+        X_roi:
+        `(1,num_rois,4)` list of rois, with ordering (x,y,w,h)
+    # Output shape
+        3D tensor with shape:
+        `(1, num_rois, channels, pool_size, pool_size)`
+    """
+
+    def __init__(self, pool_size, num_rois, alpha, **kwargs):
+        self.dim_ordering = 'tf'
+        self.pool_size = pool_size
+        self.num_rois = num_rois
+        self.alpha_channels = alpha
+
+        super(PSRoiAlignPooling, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.nb_channels = input_shape[0][3]
+
+    def compute_output_shape(self, input_shape):
+        return None, self.num_rois, self.pool_size, self.pool_size, self.alpha_channels
+
+    def call(self, x, mask=None):
+        assert (len(x) == 2)
+        total_bins = 1
+        # x[0] is image with shape (rows, cols, channels)
+        img = x[0]
+
+        # x[1] is roi with shape (num_rois,4) with ordering (x,y,w,h)
+        rois = x[1]
+
+        # because crop_size of tf.crop_and_resize requires 1-D tensor, we use uniform length
+        bin_crop_size = []
+        for num_bins, crop_dim in zip((7, 7), (14, 14)):
+            assert num_bins >= 1
+            assert crop_dim % num_bins == 0
+            total_bins *= num_bins
+            bin_crop_size.append(crop_dim // num_bins)
+
+        xmin, ymin, xmax, ymax = tf.unstack(rois[0], axis=1)
+        spatial_bins_y =  spatial_bins_x = 7
+        step_y = (ymax - ymin) / spatial_bins_y
+        step_x = (xmax - xmin) / spatial_bins_x
+
+        # gen bins
+        position_sensitive_boxes = []
+        for bin_x in range(self.pool_size): 
+            for bin_y in range(self.pool_size):
+                box_coordinates = [
+                    ymin + bin_y * step_y,
+                    xmin + bin_x * step_x,
+                    ymin + (bin_y + 1) * step_y,
+                    xmin + (bin_x + 1) * step_x 
+                ]
+                position_sensitive_boxes.append(tf.stack(box_coordinates, axis=1))
+        
+        img_splits = tf.split(img, num_or_size_splits=total_bins, axis=3)
+        box_image_indices = np.zeros(self.num_rois)
+
+        feature_crops = []
+        for split, box in zip(img_splits, position_sensitive_boxes):
+            #assert box.shape[0] == box_image_indices.shape[0], "Psroi box number doesn't match roi box indices!"
+            crop = tf.image.crop_and_resize(
+                split, box, box_image_indices,
+                bin_crop_size, method='bilinear'
+            )
+            # shape [num_boxes, crop_height/spatial_bins_y, crop_width/spatial_bins_x, depth/total_bins]
+
+            # do max pooling over spatial positions within the bin
+            crop = tf.reduce_max(crop, axis=[1, 2])
+            crop = tf.expand_dims(crop, 1)
+            # shape [num_boxes, 1, depth/total_bins]
+
+            feature_crops.append(crop)
+
+        final_output = K.concatenate(feature_crops, axis=1)
+
+        # Reshape to (1, num_rois, pool_size, pool_size, nb_channels)
+        # Might be (1, 4, 7, 7, 5)
+        final_output = K.reshape(final_output, (1, self.num_rois, self.pool_size, self.pool_size, self.alpha_channels))
+
+        # permute_dimensions is similar to transpose
+        final_output = K.permute_dimensions(final_output, (0, 1, 2, 3, 4))
+
+        return final_output
+
+    def get_config(self):
+        config = {'pool_size': self.pool_size,
+                  'num_rois': self.num_rois}
+        base_config = super(RoiPoolingConv, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class RoiPoolingConv(Layer):
@@ -124,7 +228,7 @@ def rpn_layer(base_layers, num_anchors):
     return [x_class, x_regr, base_layers]
 
 
-def classifier_layer(base_layers, input_rois, num_rois, nb_classes=4):
+def classifier_layer(base_layers, input_rois, num_rois, nb_classes=3):
     """Create a classifier layer
 
     Args:
@@ -150,10 +254,12 @@ def classifier_layer(base_layers, input_rois, num_rois, nb_classes=4):
     x = multiply([x, base_layers])
 
     pooling_regions = 7
+    alpha = 5
 
     # out_roi_pool.shape = (1, num_rois, channels, pool_size, pool_size)
     # num_rois (4) 7x7 roi pooling
-    out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([x, input_rois])
+    # out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([x, input_rois])
+    out_roi_pool = PSRoiAlignPooling(pooling_regions, num_rois, alpha)([x, input_rois])
 
     # Flatten the convlutional layer and connected to 2 FC and 2 dropout
     out = TimeDistributed(Flatten(name='flatten'))(out_roi_pool)

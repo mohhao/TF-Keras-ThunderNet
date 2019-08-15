@@ -16,10 +16,13 @@ from thundernet.layers.snet import snet_146
 from thundernet.layers.detector import rpn_layer, classifier_layer
 
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+
+
 # ----------------------------- Path_config ------------------------------ #
-base_path = 'E:/1wyh/TF-Keras-ThunderNet/'
-test_path = 'E:/1wyh/TF-Keras-ThunderNet/data/train_list.txt'
-test_base_path = 'E:/keras-thundernet-master/data/'
+base_path = '/data2/intern/TF-Keras-ThunderNet/'
+#test_path = '/data2/intern/TF-Keras-ThunderNet/data/train_list.txt'
+test_base_path = '/data2/intern/TF-Keras-ThunderNet/data/test_cube'
 config_output_filename = os.path.join(base_path, 'model/model_snet_config.pickle')
 
 # ------------------------------- Config ----------------------------------- #
@@ -63,12 +66,12 @@ def format_img(img, C):
 
 
 # Method to transform the coordinates of the bounding box to its original size
-def get_real_coordinates(ratio_w, ratio_h, x1, y1, x2, y2):
+def get_real_coordinates(ratio_h, ratio_w, x1, y1, x2, y2):
 
-    real_x1 = int(round(x1 * ratio_h))
-    real_y1 = int(round(y1 * ratio_w))
-    real_x2 = int(round(x2 * ratio_h))
-    real_y2 = int(round(y2 * ratio_w))
+    real_x1 = int(round(x1 * ratio_w))
+    real_y1 = int(round(y1 * ratio_h))
+    real_x2 = int(round(x2 * ratio_w))
+    real_y2 = int(round(y2 * ratio_h))
 
     return (real_x1, real_y1, real_x2 ,real_y2)
 
@@ -112,7 +115,7 @@ class_to_color = {class_mapping[v]: np.random.randint(0, 255, 3) for v in class_
 test_imgs = os.listdir(test_base_path)
 
 imgs_path = []
-for i in range(12):
+for i in range(485):
     idx = np.random.randint(len(test_imgs))
     imgs_path.append(test_imgs[idx])
 
@@ -124,7 +127,7 @@ classes = {}
 #                     Start Testing                     #
 # -------------------------------------------------------- #
 # If the box classification value is less than this, we ignore this box
-bbox_threshold = 0.5
+bbox_threshold = 0.0
 
 for idx, img_name in enumerate(imgs_path):
     if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
@@ -149,6 +152,7 @@ for idx, img_name in enumerate(imgs_path):
     # Get bboxes by applying NMS
     # R.shape = (300, 4)
     R = rpn_to_roi(Y1, Y2, C, 'tf', overlap_thresh=0.7)
+    print(len(R))
     # convert from (x1,y1,x2,y2) to (x,y,w,h)
     R[:, 2] -= R[:, 0]
     R[:, 3] -= R[:, 1]
@@ -205,11 +209,12 @@ for idx, img_name in enumerate(imgs_path):
 
     for key in bboxes:
         bbox = np.array(bboxes[key])
-
-        new_boxes, new_probs = non_max_suppression_fast(bbox, np.array(probs[key]), overlap_thresh=0.1)
+        print(key)
+        new_boxes, new_probs = non_max_suppression_fast(bbox, np.array(probs[key]), overlap_thresh=0.5)
         for jk in range(new_boxes.shape[0]):
-            (y1, x1, y2, x2) = new_boxes[jk, :]
-            print((y1, x1, y2, x2))
+            #(y1, x1, y2, x2) = new_boxes[jk, :]
+            (x1, y1, x2, y2) = new_boxes[jk, :]
+            print((x1, y1, x2, y2))
             # Calculate real coordinates on original image
             (real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio_h, ratio_w, x1, y1, x2, y2)
 
@@ -227,10 +232,12 @@ for idx, img_name in enumerate(imgs_path):
             cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
                           (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (255, 255, 255), -1)
             cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-
+    cv2.imwrite('./data/res/{}'.format(img_name), img)
     print('Elapsed time = {}'.format(time.time() - st))
-    print(all_dets)
+    #print(all_dets)
+    '''  
     plt.figure(figsize=(10, 10))
     plt.grid()
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     plt.show()
+    '''
